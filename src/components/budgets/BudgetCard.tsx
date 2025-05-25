@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Trash2, AlertTriangle, Edit } from 'lucide-react';
-import type { Budget, Category, Transaction } from '@/lib/types';
+import type { Budget, Category, Transaction } from '@/libs/types';
 import { useAppContext } from '@/contexts/AppContext';
 import { useToast } from '@/hooks/use-toast';
 
