@@ -170,7 +170,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
            )}
            <div className="mt-4 pt-4 border-t border-sidebar-border text-center group-data-[collapsible=icon]:hidden">
             <p className="text-xs text-muted-foreground">
-              © 2025 BudgetWise. All rights reserved.
+              &copy; {new Date().getFullYear()} BudgetWise. All rights reserved.
             </p>
             <p className="text-xs text-muted-foreground">
               Developed with ❤️ by Minjxnx
