@@ -1,16 +1,14 @@
-
 "use client";
 
-import type { Transaction, Budget, Category } from "@/libs/types";
-import { defaultCategories } from "@/libs/data"; // Sample data removed for Firestore integration
+import type { Transaction, Budget, Category, UserSettings } from "@/libs/types";
+import { defaultCategories } from "@/libs/data";
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from "react";
-import { v4 as uuidv4 } from 'uuid';
-import { auth, db } from '@/libs/firebase'; // Firebase auth and db import
+import { auth, db } from '@/libs/firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signOut as firebaseSignOut, 
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup
@@ -23,13 +21,14 @@ import {
   onSnapshot,
   query,
   orderBy,
-  serverTimestamp, // For setting server-side timestamps if needed
   writeBatch,
   setDoc,
   Timestamp,
-  getDocs,
-  where
+  getDoc
 } from 'firebase/firestore';
+
+const DEFAULT_CURRENCY = 'USD';
+const DEFAULT_THEME = 'light';
 
 interface AppContextType {
   user: FirebaseUser | null;
@@ -47,9 +46,15 @@ interface AppContextType {
   deleteTransaction: (transactionId: string) => Promise<void>;
   deleteBudget: (budgetId: string) => Promise<void>;
   getCategoryById: (categoryId: string) => Category | undefined;
-  theme: string;
-  setTheme: (theme: 'light' | 'dark') => void;
+
+  theme: 'light' | 'dark'; // This will now be derived from userSettings
+  // setTheme: (theme: 'light' | 'dark') => void; // This will be replaced by updateUserSetting
+
   dataLoading: boolean;
+  userSettings: UserSettings | null;
+  settingsLoading: boolean;
+  updateUserSetting: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => Promise<void>;
+  currentCurrency: string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -58,18 +63,40 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(true);
-  
+  const [settingsLoading, setSettingsLoading] = useState(true);
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  
-  const [categories, setCategories] = useState<Category[]>(defaultCategories);
-  
-  const [theme, setThemeState] = useState<string>(() => {
+  const [categories] = useState<Category[]>(defaultCategories); // Categories are static for now
+
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+
+  // Global theme state, managed by userSettings once loaded
+  const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>(DEFAULT_THEME);
+  const [currentCurrency, setCurrentCurrency] = useState<string>(DEFAULT_CURRENCY);
+
+  // Function to apply theme to DOM and localStorage
+  const applyTheme = useCallback((themeToApply: 'light' | 'dark') => {
+    setCurrentTheme(themeToApply);
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') || 'light';
+      document.documentElement.classList.remove('light', 'dark');
+      document.documentElement.classList.add(themeToApply);
+      localStorage.setItem('theme', themeToApply); // Keep localStorage for initial non-authed load
     }
-    return 'light';
-  });
+  }, []);
+
+  // Effect for initial theme load from localStorage (before Firebase settings kick in)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
+      if (storedTheme) {
+        applyTheme(storedTheme);
+      } else {
+        applyTheme(DEFAULT_THEME);
+      }
+    }
+  }, [applyTheme]);
+
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -77,14 +104,55 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setUser(currentUser);
       setAuthLoading(false);
       if (!currentUser) {
-        // Clear data if user logs out
         setTransactions([]);
         setBudgets([]);
+        setUserSettings(null);
         setDataLoading(false);
+        setSettingsLoading(false);
+        applyTheme(localStorage.getItem('theme') as 'light' | 'dark' || DEFAULT_THEME); // Revert to localStorage theme or default
+        setCurrentCurrency(DEFAULT_CURRENCY);
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [applyTheme]);
+
+  // Firestore listener for user settings
+  useEffect(() => {
+    if (user && !authLoading) {
+      setSettingsLoading(true);
+      const settingsRef = doc(db, 'users', user.uid, 'settings', 'preferences');
+      const unsubscribeSettings = onSnapshot(settingsRef, async (docSnap) => {
+        if (docSnap.exists()) {
+          const settingsData = docSnap.data() as UserSettings;
+          setUserSettings(settingsData);
+          applyTheme(settingsData.theme);
+          setCurrentCurrency(settingsData.currency);
+        } else {
+          // No settings doc, create one with defaults
+          const defaultSettings: UserSettings = { theme: DEFAULT_THEME, currency: DEFAULT_CURRENCY };
+          try {
+            await setDoc(settingsRef, defaultSettings);
+            setUserSettings(defaultSettings);
+            applyTheme(defaultSettings.theme);
+            setCurrentCurrency(defaultSettings.currency);
+          } catch (error) {
+            console.error("Error creating default user settings:", error);
+          }
+        }
+        setSettingsLoading(false);
+      }, (error) => {
+        console.error("Error fetching user settings: ", error);
+        setUserSettings({ theme: DEFAULT_THEME, currency: DEFAULT_CURRENCY }); // Fallback
+        applyTheme(DEFAULT_THEME);
+        setCurrentCurrency(DEFAULT_CURRENCY);
+        setSettingsLoading(false);
+      });
+      return () => unsubscribeSettings();
+    } else {
+      setSettingsLoading(false);
+    }
+  }, [user, authLoading, applyTheme]);
+
 
   // Firestore listeners for transactions and budgets
   useEffect(() => {
@@ -95,33 +163,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
         const fetchedTransactions = snapshot.docs.map(doc => {
           const data = doc.data();
-          return { 
-            id: doc.id, 
+          return {
+            id: doc.id,
             ...data,
-            // Firestore Timestamps need to be converted
             date: (data.date as Timestamp)?.toDate ? (data.date as Timestamp).toDate().toISOString() : new Date(data.date).toISOString(),
           } as Transaction;
         });
         setTransactions(fetchedTransactions);
-        setDataLoading(false);
+        setDataLoading(false); // Combined loading state, primarily for transactions
       }, (error) => {
         console.error("Error fetching transactions: ", error);
         setDataLoading(false);
       });
 
       const budgetsCol = collection(db, 'users', user.uid, 'budgets');
-      // Consider ordering budgets if necessary, e.g., by category name or amount
       const unsubscribeBudgets = onSnapshot(budgetsCol, (snapshot) => {
         const fetchedBudgets = snapshot.docs.map(doc => {
           const data = doc.data();
-          return { 
-            id: doc.id, 
+          return {
+            id: doc.id,
             ...data,
             startDate: (data.startDate as Timestamp)?.toDate ? (data.startDate as Timestamp).toDate().toISOString() : new Date(data.startDate).toISOString(),
           } as Budget;
         });
         setBudgets(fetchedBudgets);
-        // Potentially set another dataLoading flag for budgets if needed
       }, (error) => {
         console.error("Error fetching budgets: ", error);
       });
@@ -131,25 +196,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         unsubscribeBudgets();
       };
     } else {
-      // No user, clear data and stop loading
       setTransactions([]);
       setBudgets([]);
       setDataLoading(false);
     }
   }, [user, authLoading]);
 
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      document.documentElement.classList.remove('light', 'dark');
-      document.documentElement.classList.add(theme);
-      localStorage.setItem('theme', theme);
-    }
-  }, [theme]);
-
-  const setTheme = useCallback((newTheme: 'light' | 'dark') => {
-    setThemeState(newTheme);
-  }, []);
 
   const login = async (email: string, pass: string) => {
     const userCredential = await signInWithEmailAndPassword(auth, email, pass);
@@ -168,7 +220,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return result.user;
     } catch (error) {
       console.error("Google sign-in error", error);
-      // Handle specific errors, e.g., popup closed by user
       return null;
     }
   };
@@ -182,31 +233,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const transactionDate = transaction.date instanceof Date ? transaction.date : new Date(transaction.date || Date.now());
     await addDoc(collection(db, 'users', user.uid, 'transactions'), {
       ...transaction,
-      date: Timestamp.fromDate(transactionDate), // Store as Firestore Timestamp
-      userId: user.uid, // Optional: denormalize userId if needed for rules/queries
+      date: Timestamp.fromDate(transactionDate),
+      userId: user.uid,
     });
   };
 
   const addBudget = async (budget: Omit<Budget, 'id' | 'startDate'> & { startDate?: string | Date }) => {
     if (!user) throw new Error("User not authenticated");
-    const budgetStartDate = budget.startDate instanceof Date 
-      ? budget.startDate 
-      : (budget.startDate ? new Date(budget.startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-
+    const budgetStartDate = budget.startDate instanceof Date
+        ? budget.startDate
+        : (budget.startDate ? new Date(budget.startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     await addDoc(collection(db, 'users', user.uid, 'budgets'), {
       ...budget,
       startDate: Timestamp.fromDate(budgetStartDate),
       userId: user.uid,
     });
   };
-  
+
   const updateBudget = async (updatedBudget: Budget) => {
     if (!user) throw new Error("User not authenticated");
     const budgetRef = doc(db, 'users', user.uid, 'budgets', updatedBudget.id);
-    const { id, ...budgetData } = updatedBudget; // Exclude id from data to be set
+    const { id, ...budgetData } = updatedBudget;
     await setDoc(budgetRef, {
       ...budgetData,
-      // Ensure date fields are Timestamps if they are being updated
       startDate: budgetData.startDate ? Timestamp.fromDate(new Date(budgetData.startDate)) : Timestamp.fromDate(new Date(budgetData.startDate)),
     }, { merge: true });
   };
@@ -224,7 +273,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const getCategoryById = (categoryId: string) => {
     return categories.find(c => c.id === categoryId);
   };
-  
+
+  const updateUserSetting = async <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
+    if (!user) throw new Error("User not authenticated for updating settings");
+    const settingsRef = doc(db, 'users', user.uid, 'settings', 'preferences');
+    try {
+      await setDoc(settingsRef, { [key]: value }, { merge: true });
+      // If theme is updated, apply it immediately
+      if (key === 'theme') {
+        applyTheme(value as 'light' | 'dark');
+      }
+      if (key === 'currency') {
+        setCurrentCurrency(value as string);
+      }
+    } catch (error) {
+      console.error(`Error updating user setting ${key}:`, error);
+      // Potentially re-fetch settings or show an error toast
+    }
+  };
+
   const contextValue = useMemo(() => ({
     user,
     authLoading,
@@ -242,15 +309,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     deleteTransaction,
     deleteBudget,
     getCategoryById,
-    theme,
-    setTheme
-  }), [user, authLoading, dataLoading, transactions, budgets, categories, theme, setTheme, getCategoryById]);
+    theme: currentTheme, // Use the derived currentTheme
+    userSettings,
+    settingsLoading,
+    updateUserSetting,
+    currentCurrency,
+  }), [
+    user, authLoading, dataLoading, transactions, budgets, categories,
+    currentTheme, userSettings, settingsLoading, updateUserSetting, currentCurrency, applyTheme // ensure updateUserSetting stability
+  ]);
 
 
   return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-    </AppContext.Provider>
+      <AppContext.Provider value={contextValue}>
+        {children}
+      </AppContext.Provider>
   );
 };
 

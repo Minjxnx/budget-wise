@@ -36,3 +36,8 @@ export interface Insight {
   icon?: LucideIcon;
   color?: string;
 }
+
+export interface UserSettings {
+  theme: 'light' | 'dark';
+  currency: string;
+}
