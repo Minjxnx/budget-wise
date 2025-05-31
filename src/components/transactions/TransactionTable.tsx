@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Trash2, Edit3, DollarSign } from 'lucide-react';
 import { useAppContext } from '@/contexts/AppContext';
-import type { Transaction } from '@/lib/types';
+import type { Transaction } from '@/libs/types';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 

@@ -11,7 +11,7 @@ import {
   ChartLegendContent,
   type ChartConfig
 } from "@/components/ui/chart";
-import type { Transaction, Category } from "@/lib/types";
+import type { Transaction, Category } from "@/libs/types";
 
 interface CategoryPieChartProps {
   transactions: Transaction[];

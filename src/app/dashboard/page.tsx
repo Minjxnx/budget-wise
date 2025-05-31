@@ -8,8 +8,8 @@ import { TrendingUp, TrendingDown, DollarSign, Target, AlertTriangle, PieChart, 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { defaultCategories, getCategoryName, getCategoryColor } from '@/lib/data';
-import type { Insight } from '@/lib/types';
+import { defaultCategories, getCategoryName, getCategoryColor } from '@/libs/data';
+import type { Insight } from '@/libs/types';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Pie, PieChart as RechartsPieChart, Cell } from "recharts";
 

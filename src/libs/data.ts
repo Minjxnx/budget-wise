@@ -1,4 +1,4 @@
-import type { Category, Transaction, Budget } from '@/lib/types';
+import type { Category, Transaction, Budget } from '@/libs/types';
 import { ShoppingBag, Lightbulb, Home, Car, HeartPulse, Utensils, Ticket, TrendingUp, CircleDollarSign, Landmark, LucideIcon } from 'lucide-react';
 
 export const defaultCategories: Category[] = [

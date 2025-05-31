@@ -11,7 +11,7 @@ import {
   ChartLegendContent,
   type ChartConfig
 } from "@/components/ui/chart";
-import type { Transaction } from "@/lib/types";
+import type { Transaction } from "@/libs/types";
 import { format, startOfMonth, parseISO } from 'date-fns';
 
 interface MonthlyBarChartProps {
