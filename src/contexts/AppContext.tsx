@@ -1,11 +1,11 @@
 
 "use client";
 
-import type { Transaction, Budget, Category } from "@/lib/types";
-import { defaultCategories } from "@/lib/data"; // Sample data removed for Firestore integration
+import type { Transaction, Budget, Category } from "@/libs/types";
+import { defaultCategories } from "@/libs/data"; // Sample data removed for Firestore integration
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from "react";
 import { v4 as uuidv4 } from 'uuid';
-import { auth, db } from '@/lib/firebase'; // Firebase auth and db import
+import { auth, db } from '@/libs/firebase'; // Firebase auth and db import
 import type { User as FirebaseUser } from 'firebase/auth';
 import { 
   createUserWithEmailAndPassword, 
@@ -207,7 +207,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await setDoc(budgetRef, {
       ...budgetData,
       // Ensure date fields are Timestamps if they are being updated
-      startDate: budgetData.startDate instanceof Date ? Timestamp.fromDate(budgetData.startDate) : Timestamp.fromDate(new Date(budgetData.startDate)),
+      startDate: budgetData.startDate ? Timestamp.fromDate(new Date(budgetData.startDate)) : Timestamp.fromDate(new Date(budgetData.startDate)),
     }, { merge: true });
   };
 
